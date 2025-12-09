@@ -1,2 +1,2 @@
-"""Infrastructure services."""
+"""Services module."""
 

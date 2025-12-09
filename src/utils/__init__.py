@@ -1,2 +1,2 @@
-"""Utility functions and helpers."""
+"""Utilities module."""
 

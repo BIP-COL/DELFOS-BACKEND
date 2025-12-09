@@ -1,1 +1,2 @@
-# Integration tests
+"""Integration tests module."""
+

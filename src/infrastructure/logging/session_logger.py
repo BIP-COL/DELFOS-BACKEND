@@ -1,4 +1,4 @@
-"""Logging system for saving agent responses to markdown files."""
+"""Session-based markdown logger."""
 
 import json
 from datetime import datetime
@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 
-class AgentLogger:
+class SessionLogger:
     """
     Logger that saves each agent's responses to markdown files.
     """
@@ -21,8 +21,8 @@ class AgentLogger:
         if base_dir:
             self.base_dir = Path(base_dir)
         else:
-            # Calculate path to project root: src/services/logger.py -> project root
-            self.base_dir = Path(__file__).parent.parent.parent / "logs"
+            # Calculate path to project root: src/infrastructure/logging/session_logger.py -> project root
+            self.base_dir = Path(__file__).parent.parent.parent.parent / "logs"
 
         self.session_dir: Optional[Path] = None
         self.agent_counter: int = 0
@@ -75,47 +75,53 @@ Los archivos de respuesta de cada agente están en este directorio.
         self,
         agent_name: str,
         raw_response: str,
-        parsed_response: Optional[dict[str, Any]] = None,
+        parsed_response: Optional[Any] = None,
         input_text: Optional[str] = None,
+        system_prompt: Optional[str] = None,
         execution_time_ms: Optional[float] = None,
     ) -> str:
         """
-        Save an agent's response to a markdown file.
+        Log an agent's response to a markdown file.
 
         Args:
-            agent_name: Agent name (e.g., "IntentAgent").
-            raw_response: Raw agent response.
-            parsed_response: Parsed response as dictionary.
-            input_text: Input text received by the agent.
-            execution_time_ms: Execution time in milliseconds.
+            agent_name: Name of the agent.
+            raw_response: Raw response from the agent.
+            parsed_response: Parsed response (optional).
+            input_text: Input text sent to the agent (optional).
+            system_prompt: System prompt/instructions used by the agent (optional).
+            execution_time_ms: Execution time in milliseconds (optional).
 
         Returns:
             Path of the created file.
-
-        Raises:
-            RuntimeError: If a session has not been started.
         """
-        if not self.session_dir:
-            raise RuntimeError(
-                "Must call start_session() before log_agent_response()"
-            )
+        if self.session_dir is None:
+            raise RuntimeError("Session not started. Call start_session() first.")
 
         self.agent_counter += 1
-        timestamp = datetime.now().isoformat()
-
-        filename = f"{self.agent_counter:02d}_{agent_name}.md"
+        file_number = f"{self.agent_counter:02d}"
+        filename = f"{file_number}_{agent_name}.md"
         filepath = self.session_dir / filename
 
         content_parts = [
             f"# {agent_name}",
             "",
-            f"**Ejecutado:** {timestamp}",
+            f"**Ejecutado:** {datetime.now().isoformat()}",
         ]
 
         if execution_time_ms is not None:
             content_parts.append(f"**Tiempo de ejecución:** {execution_time_ms:.2f} ms")
 
         content_parts.extend(["", "---", ""])
+
+        if system_prompt:
+            content_parts.extend([
+                "## System Prompt",
+                "",
+                "```",
+                system_prompt,
+                "```",
+                "",
+            ])
 
         if input_text:
             content_parts.extend([
@@ -195,4 +201,8 @@ Los archivos de respuesta de cada agente están en este directorio.
 
         with open(session_file, "a", encoding="utf-8") as f:
             f.write(summary)
+
+        self.session_dir = None
+        self.agent_counter = 0
+        self.session_timestamp = None
 

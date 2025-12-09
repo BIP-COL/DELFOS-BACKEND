@@ -1,1 +1,2 @@
-# Tests for Delfos Multi-Agent System
+"""Tests module."""
+

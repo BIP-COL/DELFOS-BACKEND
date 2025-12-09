@@ -1,63 +1,107 @@
 """
 JSON Parser utility for extracting JSON from LLM responses.
-Optimized with pre-compiled regex patterns for better performance.
 """
 import json
+import logging
 import re
 from typing import Dict, Any
+
+logger = logging.getLogger(__name__)
 
 
 class JSONParser:
     """Helper class to extract clean JSON from LLM responses."""
-    
-    # Pre-compile regex patterns for better performance
-    _ANSWER_PATTERN = re.compile(r"<answer>\s*(.*?)\s*</answer>", re.DOTALL | re.IGNORECASE)
-    _CODE_BLOCK_PATTERN = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
-    _JSON_OBJECT_PATTERN = re.compile(r"(\{.*\})", re.DOTALL)
-    
+
     @staticmethod
     def extract_json(text: str) -> Dict[str, Any]:
         """Attempts to extract a JSON block from text."""
-        if not text:
-            return {}
-            
         try:
             return json.loads(text)
         except json.JSONDecodeError:
-            pass
-        
-        # First, try to find JSON inside <answer> tags
-        answer_match = JSONParser._ANSWER_PATTERN.search(text)
-        if answer_match:
-            answer_content = answer_match.group(1)
-            # Try to find JSON in the answer content
-            json_match = JSONParser._CODE_BLOCK_PATTERN.search(answer_content)
-            if json_match:
+            # First, try to find JSON inside <classification> tags (used by triage)
+            classification_match = re.search(
+                r"<classification>\s*(.*?)\s*</classification>", text, re.DOTALL | re.IGNORECASE
+            )
+            if classification_match:
+                classification_content = classification_match.group(1).strip()
+                # Try to find JSON in the classification content
+                json_match = re.search(
+                    r"```(?:json)?\s*(\{.*?\})\s*```", classification_content, re.DOTALL
+                )
+                if json_match:
+                    try:
+                        return json.loads(json_match.group(1))
+                    except json.JSONDecodeError:
+                        pass
+                # Try to find any JSON object in classification content (more precise matching)
+                # Use a balanced brace matcher to find complete JSON objects
+                brace_count = 0
+                start_idx = -1
+                for i, char in enumerate(classification_content):
+                    if char == '{':
+                        if start_idx == -1:
+                            start_idx = i
+                        brace_count += 1
+                    elif char == '}':
+                        brace_count -= 1
+                        if brace_count == 0 and start_idx != -1:
+                            json_str = classification_content[start_idx:i+1]
+                            try:
+                                return json.loads(json_str)
+                            except json.JSONDecodeError:
+                                pass
+                            start_idx = -1
+                # Fallback: try simple regex if balanced matching didn't work
+                json_match = re.search(r"(\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})", classification_content, re.DOTALL)
+                if json_match:
+                    try:
+                        return json.loads(json_match.group(1))
+                    except json.JSONDecodeError:
+                        pass
+            
+            # Try to find JSON inside <answer> tags
+            answer_match = re.search(
+                r"<answer>\s*(.*?)\s*</answer>", text, re.DOTALL | re.IGNORECASE
+            )
+            if answer_match:
+                answer_content = answer_match.group(1)
+                # Try to find JSON in the answer content
+                json_match = re.search(
+                    r"```(?:json)?\s*(\{.*?\})\s*```", answer_content, re.DOTALL
+                )
+                if json_match:
+                    try:
+                        return json.loads(json_match.group(1))
+                    except json.JSONDecodeError:
+                        pass
+                # Try to find any JSON object in answer content
+                json_match = re.search(r"(\{.*\})", answer_content, re.DOTALL)
+                if json_match:
+                    try:
+                        return json.loads(json_match.group(1))
+                    except json.JSONDecodeError:
+                        pass
+
+            # Fallback: try to find JSON in code blocks
+            match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+            if match:
                 try:
-                    return json.loads(json_match.group(1))
+                    return json.loads(match.group(1))
                 except json.JSONDecodeError:
                     pass
-            # Try to find any JSON object in answer content
-            json_match = JSONParser._JSON_OBJECT_PATTERN.search(answer_content)
-            if json_match:
+            # Fallback: try to find any JSON object
+            match = re.search(r"(\{.*\})", text, re.DOTALL)
+            if match:
                 try:
-                    return json.loads(json_match.group(1))
+                    return json.loads(match.group(1))
                 except json.JSONDecodeError:
                     pass
-        
-        # Fallback: try to find JSON in code blocks
-        match = JSONParser._CODE_BLOCK_PATTERN.search(text)
-        if match:
-            try:
-                return json.loads(match.group(1))
-            except json.JSONDecodeError:
-                pass
-        # Fallback: try to find any JSON object
-        match = JSONParser._JSON_OBJECT_PATTERN.search(text)
-        if match:
-            try:
-                return json.loads(match.group(1))
-            except json.JSONDecodeError:
-                pass
-        return {}
+            
+            # Log warning and return empty dict
+            # Callers should check for empty dict and handle appropriately
+            logger.warning(
+                f"JSONParser: Could not extract JSON from text (length: {len(text)} chars). "
+                f"First 200 chars: {text[:200]}"
+            )
+            return {}
 

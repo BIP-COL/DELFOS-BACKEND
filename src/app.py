@@ -1,39 +1,34 @@
-"""
-FastAPI Application - Delfos Multi-Agent System.
-"""
+"""FastAPI application entry point."""
 
 import logging
-import sys
-
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    stream=sys.stdout,
-    force=True,
-)
-
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.router import router
 from src.config.settings import get_settings
+from src.api.router import router
+from src.infrastructure.llm.factory import close_shared_credential
 
-logger = logging.getLogger(__name__)
 settings = get_settings()
 
-log_level = getattr(logging, settings.log_level.upper(), logging.INFO)
-logging.getLogger("src").setLevel(log_level)
+# Configure logging
+logging.basicConfig(
+    level=getattr(logging, settings.log_level.upper()),
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
 
-# Silenciar warnings de provider del agent_framework
-logging.getLogger("agent_framework").setLevel(logging.WARNING)
+# Silence verbose loggers
+for logger_name in ["uvicorn", "httpx", "httpcore", "azure", "azure.core"]:
+    logging.getLogger(logger_name).setLevel(logging.WARNING)
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="Delfos Multi-Agent System",
-    description="Multi-agent system for SQL queries and visualization",
+    title="Delfos NL2SQL Pipeline",
+    description="Natural Language to SQL pipeline with multi-step orchestration",
     version="0.1.0",
 )
 
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -42,18 +37,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(router, prefix="/api", tags=["api"])
+# Include routers
+app.include_router(router, prefix="/api")
 
 
-@app.get("/")
-async def root():
-    """Root endpoint with system info."""
-    return {
-        "name": "Delfos Multi-Agent System",
-        "version": "0.1.0",
-        "docs": "/docs",
-        "mcp_server": settings.mcp_server_url,
-        "azure_endpoint": settings.azure_ai_project_endpoint,
-        "log_level": settings.log_level,
-    }
+@app.on_event("startup")
+async def startup_event():
+    """Initialize application on startup."""
+    logger.info("Starting Delfos NL2SQL Pipeline")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup on shutdown."""
+    logger.info("Shutting down Delfos NL2SQL Pipeline")
+    # Close shared credential
+    try:
+        await close_shared_credential()
+        logger.info("Shared credential closed")
+    except Exception as e:
+        logger.error(f"Error closing shared credential: {e}", exc_info=True)
 

@@ -86,8 +86,8 @@ class Settings(BaseSettings):
     ######################################
 
     mcp_server_url: str = "https://func-mcp-n2z2m7tmh3kvk.azurewebsites.net/mcp"
-    mcp_timeout: int = 60
-    mcp_sse_timeout: int = 30
+    mcp_timeout: int = 120  # allow extra time for first login to DB
+    mcp_sse_timeout: int = 60
     
     ######################################
     # Azure Blob Storage
@@ -120,7 +120,7 @@ class Settings(BaseSettings):
     schema_cache_ttl: int = 3600
 
     # Global response timeout
-    response_timeout: int = 120
+    response_timeout: int = 240
 
     # Steps timeout
     # Note: Timeouts are defined but not yet enforced in services
@@ -129,7 +129,7 @@ class Settings(BaseSettings):
     intent_timeout: float = 5.0
     sql_generation_timeout: float = 120.0  # Increased for MCP + large schemas
     sql_validation_timeout: float = 10.0
-    sql_execution_timeout: float = 15.0
+    sql_execution_timeout: float = 60.0  # allow for initial DB login warm-up
     verification_timeout: float = 10.0
     viz_timeout: float = 15.0
     graph_timeout: float = 15.0

@@ -1,10 +1,12 @@
 """
 Retry utilities for handling rate limits and transient errors.
 """
+
 import asyncio
 import logging
 import re
-from typing import Callable, Any, TypeVar
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +21,7 @@ async def run_with_retry(
     retry_on_rate_limit: bool = True,
 ) -> Any:
     """
-    Execute an async function with retry logic for rate limit errors.
+    Execute an async function with retry logic for rate limit and transient errors.
 
     Args:
         func: Async function to execute (no parameters)
@@ -50,30 +52,36 @@ async def run_with_retry(
                 or "rate limit is exceeded" in error_str
             )
 
-            if is_rate_limit and retry_on_rate_limit:
-                if attempt < max_retries - 1:
-                    # Try to extract wait time from error message
-                    wait_time_match = re.search(
-                        r"(\d+)\s*seconds?", str(e), re.IGNORECASE
-                    )
-                    if wait_time_match:
-                        wait_time = float(wait_time_match.group(1))
-                    else:
-                        # Use exponential backoff
-                        wait_time = initial_delay * (backoff_factor ** attempt)
+            # Check for connection or timeout errors
+            is_connection_error = (
+                "login timeout" in error_str
+                or "connection timeout" in error_str
+                or "timeout expired" in error_str
+                or "communication link failure" in error_str
+            )
 
-                    logger.warning(
-                        f"Rate limit detected (attempt {attempt + 1}/{max_retries}). "
-                        f"Waiting {wait_time:.1f} seconds before retry..."
-                    )
-                    await asyncio.sleep(wait_time)
-                    continue
+            should_retry = (is_rate_limit or is_connection_error) and retry_on_rate_limit
 
-            # If not rate limit or max retries reached, raise the exception
+            if should_retry and attempt < max_retries - 1:
+                # Try to extract wait time from error message
+                wait_time_match = re.search(r"(\d+)\s*seconds?", str(e), re.IGNORECASE)
+                if wait_time_match:
+                    wait_time = float(wait_time_match.group(1))
+                else:
+                    # Use exponential backoff
+                    wait_time = initial_delay * (backoff_factor**attempt)
+
+                logger.warning(
+                    f"Transient error detected ({str(e)}). Attempt {attempt + 1}/{max_retries}. "
+                    f"Waiting {wait_time:.1f} seconds before retry..."
+                )
+                await asyncio.sleep(wait_time)
+                continue
+
+            # If not retryable or max retries reached, raise the exception
             raise
 
     # If we exhausted retries, raise the last exception
     if last_exception:
         raise last_exception
     raise Exception("Max retries exceeded")
-

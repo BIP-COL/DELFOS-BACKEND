@@ -508,17 +508,19 @@ class PipelineOrchestrator:
             # Step 1: TRIAGE
             triage_result = await self._step_triage(state, message)
             yield {
+                "type": "triage",
                 "step": "triage",
                 "result": triage_result,
                 "state": {"query_type": state.query_type},
             }
             if state.query_type != "data_question":
-                yield {"step": "complete", "response": triage_result}
+                yield {"type": "complete", "step": "complete", "response": triage_result}
                 return
             
             # Step 2: INTENT
             intent_result = await self._step_intent(state, message)
             yield {
+                "type": "intent",
                 "step": "intent",
                 "result": intent_result,
                 "state": {
@@ -529,12 +531,13 @@ class PipelineOrchestrator:
                 },
             }
             if state.pattern_type != "comparacion":
-                yield {"step": "complete", "response": intent_result}
+                yield {"type": "complete", "step": "complete", "response": intent_result}
                 return
             
             # Step 3: SCHEMA
             schema_result = await self._step_schema(state, message)
             yield {
+                "type": "schema",
                 "step": "schema",
                 "result": schema_result,
                 "state": {"selected_tables": state.selected_tables},
@@ -543,6 +546,7 @@ class PipelineOrchestrator:
             # Step 4: SQL_GENERATION (includes validation)
             sql_result = await self._step_sql_generation(state, message, max_retries=2)
             yield {
+                "type": "sql_generation",
                 "step": "sql_generation",
                 "result": sql_result,
                 "state": {"sql_query": state.sql_query},
@@ -554,12 +558,13 @@ class PipelineOrchestrator:
                     final_message=json.dumps(sql_result, indent=2, ensure_ascii=False),
                     errors=errors,
                 )
-                yield {"step": "complete", "response": sql_result}
+                yield {"type": "complete", "step": "complete", "response": sql_result}
                 return
             
             # Step 5: SQL_EXECUTION
             exec_result = await self._step_sql_execution(state)
             yield {
+                "type": "sql_execution",
                 "step": "sql_execution",
                 "result": exec_result,
                 "state": {
@@ -571,6 +576,7 @@ class PipelineOrchestrator:
             # Step 6: VERIFICATION
             verification_result = await self._step_verification(state, message)
             yield {
+                "type": "verification",
                 "step": "verification",
                 "result": verification_result,
                 "state": {"verification_passed": state.verification_passed},
@@ -580,6 +586,7 @@ class PipelineOrchestrator:
             viz_result = await self._step_visualization(state, message)
             if viz_result:
                 yield {
+                    "type": "visualization",
                     "step": "visualization",
                     "result": viz_result,
                     "state": {
@@ -595,6 +602,7 @@ class PipelineOrchestrator:
                     if "error" in graph_result:
                         errors.append(graph_result["error"])
                     yield {
+                        "type": "graph",
                         "step": "graph",
                         "result": graph_result,
                         "state": {
@@ -607,6 +615,7 @@ class PipelineOrchestrator:
             # Step 9: FORMAT
             final_response = await self._step_format(state)
             yield {
+                "type": "format",
                 "step": "format",
                 "result": final_response,
             }
@@ -616,7 +625,7 @@ class PipelineOrchestrator:
                 final_message=json.dumps(final_response, indent=2, ensure_ascii=False),
                 errors=errors,
             )
-            yield {"step": "complete", "response": final_response}
+            yield {"type": "complete", "step": "complete", "response": final_response}
 
         except Exception as e:
             logger.error(f"Pipeline error: {e}", exc_info=True)
@@ -626,7 +635,7 @@ class PipelineOrchestrator:
                 final_message=f"Pipeline error: {str(e)}",
                 errors=errors,
             )
-            yield {"step": "error", "error": str(e)}
+            yield {"type": "error", "step": "error", "error": str(e)}
 
     def _format_non_data_response(
         self, state: PipelineState, triage_result: Dict[str, Any]
@@ -678,4 +687,3 @@ class PipelineOrchestrator:
             "insight": "NA",
             "error": reasoning,
         }
-

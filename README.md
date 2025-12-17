@@ -30,6 +30,7 @@ cp .env.example .env
 3. Run the application:
 ```bash
 uvicorn src.app:app --reload
+uv run python -m uvicorn src.app:app --reload
 uv run uvicorn src.app:app --reload
 ```
 
@@ -70,5 +71,8 @@ Format code:
 ```bash
 black src/
 ruff check src/
+uv run ruff check .
+uv run python -m mypy src                                                             
+uv run ruff format .    
 ```
 
